@@ -1,7 +1,10 @@
 use deku::prelude::*;
-use std::{fmt, net::UdpSocket};
+use std::{
+    fmt,
+    net::{Ipv4Addr, UdpSocket},
+};
 
-#[derive(Debug, PartialEq, DekuRead, DekuWrite)]
+#[derive(Debug, PartialEq, DekuRead, DekuWrite, Clone)]
 struct Label {
     #[deku(endian = "big")]
     length: u8,
@@ -15,7 +18,7 @@ impl fmt::Display for Label {
     }
 }
 
-#[derive(Debug, PartialEq, DekuRead, DekuWrite)]
+#[derive(Debug, PartialEq, DekuRead, DekuWrite, Clone)]
 struct Name {
     #[deku(until = "|label: &Label| label.length == 0")]
     labels: Vec<Label>,
@@ -35,7 +38,7 @@ impl fmt::Display for Name {
     }
 }
 
-#[derive(Debug, PartialEq, DekuRead, DekuWrite)]
+#[derive(Debug, PartialEq, DekuRead, DekuWrite, Clone)]
 struct Question {
     name: Name,
     #[deku(endian = "big")]
@@ -104,6 +107,27 @@ impl fmt::Display for Header {
     }
 }
 
+#[derive(Debug, PartialEq, DekuRead, DekuWrite)]
+struct Answer {
+    name: Name, // Label sequence
+    #[deku(endian = "big")]
+    _type: u16, // A record type
+    #[deku(endian = "big")]
+    class: u16, // IN record type
+    #[deku(endian = "big")]
+    ttl: u32, // Time to live
+    #[deku(endian = "big")]
+    length: u16, // Length of the data field
+    #[deku(endian = "big")]
+    data: Ipv4Addr,
+}
+
+#[derive(Debug, PartialEq, DekuRead, DekuWrite)]
+struct Response {
+    header: Header,
+    answers: Answer,
+}
+
 fn main() {
     let udp_socket = UdpSocket::bind("127.0.0.1:2053").expect("Failed to bind to address");
     let mut buf = [0; 512];
@@ -116,11 +140,24 @@ fn main() {
                 val.id = 1234;
                 val.qr = true;
                 val.qdcount = 1;
+                val.ancount = 1;
                 val.question._type = 1;
                 val.question.class = 1;
                 println!("{}", &val);
+                let answer = Answer {
+                    name: val.question.name.clone(),
+                    _type: 1,
+                    class: 1,
+                    ttl: 60,
+                    length: 4,
+                    data: Ipv4Addr::new(127, 0, 0, 1),
+                };
+                let response = Response {
+                    header: val,
+                    answers: answer,
+                };
                 udp_socket
-                    .send_to(&val.to_bytes().unwrap(), source)
+                    .send_to(&response.to_bytes().unwrap(), source)
                     .expect("Failed to send response");
             }
             Err(e) => {
