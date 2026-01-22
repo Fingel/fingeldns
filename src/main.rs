@@ -137,8 +137,12 @@ fn main() {
             Ok((size, source)) => {
                 println!("Received {} bytes from {}", size, source);
                 let (_rest, mut val) = Header::from_bytes((&buf, 0)).unwrap();
-                val.id = 1234;
                 val.qr = true;
+                val.aa = false;
+                val.tc = false;
+                val.ra = false;
+                val.z = 0;
+                val.rcode = if val.opcode == 0 { 0 } else { 4 };
                 val.qdcount = 1;
                 val.ancount = 1;
                 val.question._type = 1;
