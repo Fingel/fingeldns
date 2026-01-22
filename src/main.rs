@@ -1,9 +1,58 @@
 use deku::prelude::*;
-use std::net::UdpSocket;
+use std::{fmt, net::UdpSocket};
 
 #[derive(Debug, PartialEq, DekuRead, DekuWrite)]
-#[deku(endian = "big")]
+struct Label {
+    #[deku(endian = "big")]
+    length: u8,
+    #[deku(count = "length")]
+    data: Vec<u8>,
+}
+
+impl fmt::Display for Label {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", String::from_utf8_lossy(&self.data))
+    }
+}
+
+#[derive(Debug, PartialEq, DekuRead, DekuWrite)]
+struct Name {
+    #[deku(until = "|label: &Label| label.length == 0")]
+    labels: Vec<Label>,
+}
+
+impl fmt::Display for Name {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.labels
+                .iter()
+                .map(|label| label.to_string())
+                .collect::<Vec<String>>()
+                .join(".")
+        )
+    }
+}
+
+#[derive(Debug, PartialEq, DekuRead, DekuWrite)]
+struct Question {
+    name: Name,
+    #[deku(endian = "big")]
+    _type: u16, // A Record Type
+    #[deku(endian = "big")]
+    class: u16, // IN record class
+}
+
+impl fmt::Display for Question {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{}.{:?}", self.name, self._type, self.class)
+    }
+}
+
+#[derive(Debug, PartialEq, DekuRead, DekuWrite)]
 struct Header {
+    #[deku(endian = "big")]
     id: u16, // Packet ID
     #[deku(bits = "1")]
     qr: bool, // Query/Response Indicator
@@ -21,10 +70,38 @@ struct Header {
     z: u8, // Reserved
     #[deku(bits = "4")]
     rcode: u8, // Response Code
+    #[deku(endian = "big")]
     qdcount: u16, // Question Count
+    #[deku(endian = "big")]
     ancount: u16, // Answer Record Count
+    #[deku(endian = "big")]
     nscount: u16, // Authority Record Count
+    #[deku(endian = "big")]
     arcount: u16, // Additional Record Count
+    question: Question, // Question Section
+}
+
+impl fmt::Display for Header {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Header {{ id: {}, qr: {}, opcode: {}, aa: {}, tc: {}, rd: {}, ra: {}, z: {}, rcode: {}, qdcount: {}, ancount: {}, nscount: {}, arcount: {}, question: {} }}",
+            self.id,
+            self.qr,
+            self.opcode,
+            self.aa,
+            self.tc,
+            self.rd,
+            self.ra,
+            self.z,
+            self.rcode,
+            self.qdcount,
+            self.ancount,
+            self.nscount,
+            self.arcount,
+            self.question
+        )
+    }
 }
 
 fn main() {
@@ -36,8 +113,12 @@ fn main() {
             Ok((size, source)) => {
                 println!("Received {} bytes from {}", size, source);
                 let (_rest, mut val) = Header::from_bytes((&buf, 0)).unwrap();
+                val.id = 1234;
                 val.qr = true;
-                println!("{:?}", &val);
+                val.qdcount = 1;
+                val.question._type = 1;
+                val.question.class = 1;
+                println!("{}", &val);
                 udp_socket
                     .send_to(&val.to_bytes().unwrap(), source)
                     .expect("Failed to send response");
